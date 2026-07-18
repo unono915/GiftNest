@@ -5,6 +5,15 @@ import "./globals.css";
 export const metadata: Metadata = {
   title: "GiftNest",
   description: "가족이 함께 쓰는 기프티콘 관리 앱",
+  manifest: "/manifest.webmanifest",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "default",
+    title: "GiftNest",
+  },
+  icons: {
+    apple: "/icons/apple-touch-icon.png",
+  },
 };
 
 export const viewport: Viewport = {

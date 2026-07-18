@@ -8,7 +8,7 @@ import { firebaseWebConfig } from "./config";
 
 const useEmulator = process.env.NEXT_PUBLIC_USE_FIREBASE_EMULATOR === "true";
 
-function getFirebaseApp(): FirebaseApp {
+export function getFirebaseApp(): FirebaseApp {
   const existing = getApps();
   if (existing.length > 0) return existing[0];
   return initializeApp(firebaseWebConfig);

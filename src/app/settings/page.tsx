@@ -9,6 +9,8 @@ import { Button } from "@/components/ui/button";
 import { FullScreenSpinner } from "@/components/ui/spinner";
 import { MemberManagement } from "@/features/members/MemberManagement";
 import { ChangePinForm } from "@/features/settings/ChangePinForm";
+import { NotificationSettings } from "@/features/settings/NotificationSettings";
+import { InstallPrompt } from "@/features/pwa/InstallPrompt";
 
 export default function SettingsPage() {
   const status = useAuthGuard("profile-complete");
@@ -52,7 +54,18 @@ export default function SettingsPage() {
 
         <Card>
           <CardTitle>알림</CardTitle>
-          <CardDescription>알림 허용 및 발송 시간 설정은 다음 단계에서 제공됩니다.</CardDescription>
+          <CardDescription>매일 오전 9시 기한 임박 및 사용 예정 알림을 보냅니다.</CardDescription>
+          <div className="mt-4">
+            <NotificationSettings />
+          </div>
+        </Card>
+
+        <Card>
+          <CardTitle>홈 화면에 설치</CardTitle>
+          <CardDescription>앱처럼 빠르게 열 수 있도록 홈 화면에 추가하세요.</CardDescription>
+          <div className="mt-4">
+            <InstallPrompt />
+          </div>
         </Card>
 
         <Card>

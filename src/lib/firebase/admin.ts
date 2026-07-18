@@ -35,7 +35,7 @@ function buildCredential() {
   );
 }
 
-function getAdminApp(): App {
+export function getAdminApp(): App {
   const existing = getApps();
   if (existing.length > 0) return existing[0];
 
