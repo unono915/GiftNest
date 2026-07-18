@@ -32,10 +32,17 @@ async function main() {
   }
 
   const hash = await bcrypt.hash(pin, BCRYPT_COST);
+  // Next.js's .env loader (dotenv-expand) treats bare `$word` as a variable
+  // reference, which mangles bcrypt hashes like `$2a$12$...`. Escaping each
+  // `$` as `\$` makes it resolve back to a literal `$` at load time. This
+  // escaping is a `.env*` file quirk only — paste the *unescaped* hash
+  // directly into Vercel/Firebase Secret dashboards, which don't run it
+  // through dotenv parsing.
+  const envFileEscapedHash = hash.replace(/\$/g, "\\$");
 
-  console.log("\n생성된 해시를 FAMILY_PIN_HASH 값으로 사용하세요.");
-  console.log("로컬 개발: .env.local 파일의 FAMILY_PIN_HASH= 뒤에 붙여넣기");
-  console.log("운영 환경: 호스팅 서비스의 Secret/Environment Variable로 등록\n");
+  console.log("\n[.env.local에 붙여넣기] (dotenv 변수 치환 방지용으로 $ 이스케이프됨)");
+  console.log(`FAMILY_PIN_HASH=${envFileEscapedHash}`);
+  console.log("\n[운영 Secret(Vercel/Firebase 등)에 등록] (이스케이프 없는 원본 해시)");
   console.log(hash);
 }
 

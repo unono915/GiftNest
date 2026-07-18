@@ -1,9 +1,11 @@
 import "server-only";
 
-import { cert, getApps, initializeApp, type App, applicationDefault } from "firebase-admin/app";
+import { cert, getApps, initializeApp, type App } from "firebase-admin/app";
 import { getAuth } from "firebase-admin/auth";
 import { getFirestore } from "firebase-admin/firestore";
 import { getStorage } from "firebase-admin/storage";
+
+const isEmulator = Boolean(process.env.FIRESTORE_EMULATOR_HOST);
 
 /**
  * Vercel has no Application Default Credentials metadata server (unlike
@@ -21,14 +23,15 @@ function buildCredential() {
     return { credential: cert({ projectId, clientEmail, privateKey }), projectId };
   }
 
-  // Firestore/Storage/Auth emulators authenticate via *_EMULATOR_HOST env
-  // vars regardless of credential, so a bare project id is enough locally.
-  if (process.env.FIRESTORE_EMULATOR_HOST && projectId) {
-    return { credential: applicationDefault(), projectId };
+  // Firestore/Storage/Auth emulators trust *_EMULATOR_HOST env vars alone —
+  // no real credential needed, and createCustomToken() falls back to
+  // signing unsigned tokens the Auth emulator accepts directly.
+  if (isEmulator && projectId) {
+    return { credential: undefined, projectId };
   }
 
   throw new Error(
-    "Firebase Admin credentials are missing. Set FIREBASE_ADMIN_PROJECT_ID, FIREBASE_ADMIN_CLIENT_EMAIL, and FIREBASE_ADMIN_PRIVATE_KEY."
+    "Firebase Admin credentials are missing. Set FIREBASE_ADMIN_PROJECT_ID, FIREBASE_ADMIN_CLIENT_EMAIL, and FIREBASE_ADMIN_PRIVATE_KEY (or run against the emulator with FIRESTORE_EMULATOR_HOST set)."
   );
 }
 
@@ -38,7 +41,7 @@ function getAdminApp(): App {
 
   const { credential, projectId } = buildCredential();
   return initializeApp({
-    credential,
+    ...(credential ? { credential } : {}),
     projectId,
     storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET,
   });

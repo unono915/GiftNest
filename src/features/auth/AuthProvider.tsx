@@ -34,6 +34,15 @@ type AuthContextValue = {
   signInWithPin: (pin: string) => Promise<PinLoginResult>;
   signOutDevice: () => Promise<void>;
   refreshIdToken: () => Promise<string | null>;
+  /**
+   * Optimistically applies a just-registered device so `status` flips to
+   * "ready" immediately, instead of waiting on the Firestore listener to
+   * observe the server write. Re-authenticating in the same tab (e.g.
+   * logout then immediately logging back in) can leave that listener slow
+   * to re-fire; the listener still takes over as the source of truth right
+   * after.
+   */
+  applyRegisteredDevice: (device: Device) => void;
 };
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -120,6 +129,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const current = getFirebaseAuth().currentUser;
         if (!current) return null;
         return current.getIdToken();
+      },
+      applyRegisteredDevice(device: Device) {
+        setDeviceState({ uid: device.id, device });
       },
     }),
     [status, user, device, member]

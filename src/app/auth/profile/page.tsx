@@ -1,7 +1,9 @@
 "use client";
 
 import { useState, type FormEvent } from "react";
+import { useRouter } from "next/navigation";
 import { useAuthGuard } from "@/features/auth/useAuthGuard";
+import { useAuth } from "@/features/auth/AuthProvider";
 import { useMembers } from "@/features/members/useMembers";
 import { AvatarPicker } from "@/features/members/AvatarPicker";
 import { authedJson } from "@/lib/api/client";
@@ -12,10 +14,12 @@ import { Card, CardDescription, CardTitle } from "@/components/ui/card";
 import { FullScreenSpinner } from "@/components/ui/spinner";
 import { AVATAR_EMOJI_OPTIONS } from "@/lib/validation/members";
 import { cn } from "@/lib/utils";
-import type { Member } from "@/types/domain";
+import type { Device, Member } from "@/types/domain";
 
 export default function ProfileSetupPage() {
   const status = useAuthGuard("profile-complete");
+  const router = useRouter();
+  const { applyRegisteredDevice } = useAuth();
   const { activeMembers, loading: membersLoading } = useMembers();
 
   const [selectedMemberId, setSelectedMemberId] = useState<string | "new" | null>(null);
@@ -55,12 +59,12 @@ export default function ProfileSetupPage() {
         memberId = created.member.id;
       }
 
-      await authedJson("/api/devices/register", {
+      const { device } = await authedJson<{ device: Device }>("/api/devices/register", {
         method: "POST",
         body: JSON.stringify({ memberId, deviceName: deviceName.trim() }),
       });
-      // AuthProvider's device subscription will flip status to "ready" and
-      // the guard above redirects automatically.
+      applyRegisteredDevice(device);
+      router.replace("/gifticons");
     } catch (err) {
       setError(err instanceof Error ? err.message : "등록 중 오류가 발생했습니다.");
       setSubmitting(false);
