@@ -1,0 +1,52 @@
+@import "tailwindcss";
+
+:root {
+  --background: #f7f7f5;
+  --foreground: #171717;
+
+  --brand-50: #fff7ed;
+  --brand-100: #ffedd5;
+  --brand-500: #f97316;
+  --brand-600: #ea580c;
+  --brand-700: #c2410c;
+  --brand-800: #9a3412;
+
+  --status-available: #16a34a;
+  --status-planned: #2563eb;
+  --status-used: #6b7280;
+  --status-expired: #dc2626;
+  --status-needs-review: #d97706;
+  --status-archived: #9ca3af;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+
+  --color-brand-50: var(--brand-50);
+  --color-brand-100: var(--brand-100);
+  --color-brand-500: var(--brand-500);
+  --color-brand-600: var(--brand-600);
+  --color-brand-700: var(--brand-700);
+  --color-brand-800: var(--brand-800);
+
+  --color-status-available: var(--status-available);
+  --color-status-planned: var(--status-planned);
+  --color-status-used: var(--status-used);
+  --color-status-expired: var(--status-expired);
+  --color-status-needs-review: var(--status-needs-review);
+  --color-status-archived: var(--status-archived);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #111113;
+    --foreground: #f2f2f2;
+  }
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: system-ui, -apple-system, "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
+}

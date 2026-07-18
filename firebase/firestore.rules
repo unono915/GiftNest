@@ -1,0 +1,58 @@
+rules_version = '2';
+
+// MVP runs exactly one fixed family space (PRD 7.1). The id itself isn't a
+// secret (see src/lib/firebase/config.ts) — access is gated by
+// isFamilyDevice() below, not by hiding this string. Keep this in sync with
+// FAMILY_ID / NEXT_PUBLIC_FAMILY_ID.
+function isFamilyDevice(familyId) {
+  return request.auth != null && familyId == "family-main";
+}
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /families/{familyId} {
+
+      // All writes go through server API routes using the Admin SDK, which
+      // bypasses these rules entirely — clients never write directly, so
+      // every collection below is read-only (or fully denied) for them.
+
+      match /members/{memberId} {
+        allow read: if isFamilyDevice(familyId);
+        allow write: if false;
+      }
+
+      match /devices/{deviceId} {
+        allow read: if isFamilyDevice(familyId);
+        allow write: if false;
+      }
+
+      match /gifticons/{gifticonId} {
+        allow read: if isFamilyDevice(familyId);
+        allow write: if false;
+      }
+
+      match /auditLogs/{logId} {
+        allow read: if isFamilyDevice(familyId);
+        allow write: if false;
+      }
+
+      match /notificationLogs/{notificationId} {
+        allow read: if isFamilyDevice(familyId);
+        allow write: if false;
+      }
+
+      // Contains the family PIN hash — never exposed to clients, even for
+      // read, unlike the other family-shared collections above.
+      match /settings/{settingId} {
+        allow read, write: if false;
+      }
+
+      // Login rate-limit counters — server-only (PIN flow runs before any
+      // client would have a Firebase Auth session to satisfy isFamilyDevice
+      // anyway, so this stays fully denied as defense in depth).
+      match /authAttempts/{deviceId} {
+        allow read, write: if false;
+      }
+    }
+  }
+}

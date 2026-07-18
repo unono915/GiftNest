@@ -1,0 +1,26 @@
+rules_version = '2';
+
+service firebase.storage {
+  match /b/{bucket}/o {
+    // See firestore.rules for why "family-main" is hardcoded here — it is
+    // not a secret, and must stay in sync with FAMILY_ID.
+    match /families/family-main/gifticons/{gifticonId}/{fileName} {
+      allow read: if request.auth != null;
+
+      // Original photo upload: image only, capped at 15MB (PRD 5.3 —
+      // resized/thumbnail variants are written by the server, not clients).
+      allow create: if request.auth != null
+        && request.resource.size < 15 * 1024 * 1024
+        && request.resource.contentType.matches("image/.*");
+
+      // Replacing or removing an image always goes through a server API
+      // route (Admin SDK bypasses Storage rules), keeping deletion tied to
+      // the same audit-logged flow as every other Gifticon mutation.
+      allow update, delete: if false;
+    }
+
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}
