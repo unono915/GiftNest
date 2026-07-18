@@ -1,0 +1,19 @@
+{
+  "name": "giftnest",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "hash-pin": "tsx scripts/hash-pin.ts",
+    "prepare": "husky"
+  },
+  "devDependencies": {
+    "@types/bcryptjs": "^2.4.6",
+    "@types/node": "^22.10.5",
+    "@types/prompts": "^2.4.9",
+    "bcryptjs": "^2.4.3",
+    "husky": "^9.1.7",
+    "prompts": "^2.4.2",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.3"
+  }
+}

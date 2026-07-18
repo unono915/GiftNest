@@ -1,0 +1,19 @@
+title = "GiftNest gitleaks config"
+
+[extend]
+useDefault = true
+
+# GiftNest 전용 추가 규칙: 초기 운영 PIN(1171)이나 그 해시가
+# 코드/README/테스트/커밋에 값으로 대입되는 패턴을 잡는다.
+# 단순 숫자 1171(포트 번호, CSS 값 등)까지 잡지 않도록 대입 맥락으로 한정한다.
+[[rules]]
+id = "giftnest-hardcoded-family-pin"
+description = "GiftNest family PIN literal assigned in code"
+regex = '''(?i)(pin|password)\s*[:=]\s*["']1171["']'''
+tags = ["giftnest", "secret"]
+
+[[rules]]
+id = "giftnest-service-account-json"
+description = "Firebase service account JSON committed"
+path = '''(^|/)(firebase-adminsdk.*|.*service-account.*)\.json$'''
+tags = ["giftnest", "secret"]
