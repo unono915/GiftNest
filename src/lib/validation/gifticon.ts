@@ -60,6 +60,13 @@ export const updateGifticonSchema = z.object({
   memo: z.string().trim().max(500).nullable().optional(),
   /** Manual "확인 완료" toggle — clears the needs_review bucket without changing the underlying data. */
   needsReview: z.boolean().optional(),
+  /**
+   * PRD 14 "동시 수정": the `updatedAt` the client last saw. If the stored
+   * value has since moved on, the write is rejected as a 409 instead of
+   * silently overwriting a concurrent edit from another family member's
+   * device.
+   */
+  expectedUpdatedAt: z.string().optional(),
 });
 
 export type UpdateGifticonInput = z.infer<typeof updateGifticonSchema>;

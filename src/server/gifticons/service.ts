@@ -137,6 +137,9 @@ export async function updateGifticon(
   if (!snap.exists) throw new ApiError(404, "기프티콘을 찾을 수 없습니다.");
   const current = snap.data() as Gifticon;
   if (current.deletedAt) throw new ApiError(404, "삭제된 기프티콘입니다.");
+  if (patch.expectedUpdatedAt && patch.expectedUpdatedAt !== current.updatedAt) {
+    throw new ApiError(409, "다른 기기에서 먼저 수정했습니다. 최신 정보를 확인한 뒤 다시 시도해 주세요.");
+  }
 
   const before: Record<string, unknown> = {};
   const after: Record<string, unknown> = {};

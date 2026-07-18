@@ -17,6 +17,7 @@ import { PlanModal } from "@/features/gifticons/PlanModal";
 import { UseModal } from "@/features/gifticons/UseModal";
 import { AuditLogList } from "@/features/gifticons/AuditLogList";
 import { deleteGifticon, restoreGifticonUse, updateGifticon } from "@/features/gifticons/api";
+import { ApiClientError } from "@/lib/api/client";
 import { STATUS_BADGE_TONE, formatDDayLabel } from "@/features/gifticons/statusDisplay";
 import { CATEGORY_LABELS, STATUS_LABELS } from "@/types/domain";
 
@@ -66,10 +67,17 @@ export default function GifticonDetailPage() {
         expirationDate: values.expirationDate || null,
         memo: values.memo.trim() || null,
         needsReview: values.expirationDate === "" ? true : undefined,
+        // PRD 14 "동시 수정": if another device saved first, the server
+        // rejects this with 409 instead of silently overwriting it — the
+        // live onSnapshot subscription already shows the newer data, so
+        // closing edit mode is enough to surface it.
+        expectedUpdatedAt: gifticon!.updatedAt,
       });
       setEditing(false);
     } catch (err) {
+      const isConflict = err instanceof ApiClientError && err.status === 409;
       setActionError(err instanceof Error ? err.message : "저장에 실패했습니다.");
+      if (isConflict) setEditing(false);
     } finally {
       setSubmitting(false);
     }

@@ -1,0 +1,142 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# PRD 9.4: PR에서는 검사만 실행하고, main 병합 후에만 실제 배포가 일어난다
+# (배포는 Vercel의 GitHub 연동이 별도로 처리하며 이 워크플로우는 검사 전용).
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    env:
+      # Build-time only placeholders — never real secrets. Nothing here is
+      # sensitive: NEXT_PUBLIC_* values are safe to expose by design (PRD
+      # 10.4), and the non-public ones are dummy strings only so any
+      # module-level env read doesn't crash the build; real values live in
+      # Vercel's runtime environment variables, not here.
+      GEMINI_API_KEY: ci-placeholder
+      GEMINI_MODEL: gemini-3.1-flash-lite
+      FAMILY_PIN_HASH: ci-placeholder
+      FAMILY_ID: family-main
+      CRON_SECRET: ci-placeholder
+      NEXT_PUBLIC_FAMILY_ID: family-main
+      NEXT_PUBLIC_FIREBASE_API_KEY: ci-placeholder
+      NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN: ci-placeholder.firebaseapp.com
+      NEXT_PUBLIC_FIREBASE_PROJECT_ID: ci-placeholder
+      NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET: ci-placeholder.firebasestorage.app
+      NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID: "000000000000"
+      NEXT_PUBLIC_FIREBASE_APP_ID: "1:000000000000:web:0000000000000000000000"
+      NEXT_PUBLIC_FIREBASE_VAPID_KEY: ci-placeholder
+      FIREBASE_ADMIN_PROJECT_ID: ci-placeholder
+      FIREBASE_ADMIN_CLIENT_EMAIL: ci-placeholder@ci-placeholder.iam.gserviceaccount.com
+      # Not real PEM content on purpose — Admin SDK's cert() is only ever
+      # called lazily inside API route handlers, which `next build`'s
+      # static analysis never invokes, so this value never gets parsed.
+      FIREBASE_ADMIN_PRIVATE_KEY: ci-placeholder-not-a-real-key
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Unit tests
+        run: npm run test
+
+      - name: Build
+        run: npm run build
+
+  rules-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: "temurin"
+          java-version: "21"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Firestore/Storage security rules tests
+        run: npm run test:rules
+
+  e2e-test:
+    runs-on: ubuntu-latest
+    env:
+      # Points the dev server at the emulators Firebase's own project id
+      # must match .firebaserc for singleProjectMode (see the emulator
+      # flakiness notes in the planning doc — a mismatched project id here
+      # has been observed to destabilize the Firestore emulator).
+      NEXT_PUBLIC_USE_FIREBASE_EMULATOR: "true"
+      NEXT_PUBLIC_FAMILY_ID: family-main
+      FAMILY_ID: family-main
+      NEXT_PUBLIC_FIREBASE_API_KEY: ci-placeholder
+      NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN: giftnest-b8253.firebaseapp.com
+      NEXT_PUBLIC_FIREBASE_PROJECT_ID: giftnest-b8253
+      NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET: giftnest-b8253.firebasestorage.app
+      NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID: "000000000000"
+      NEXT_PUBLIC_FIREBASE_APP_ID: "1:000000000000:web:0000000000000000000000"
+      # bcrypt hash of a throwaway dev-only PIN used solely to drive this
+      # test's login step against the Auth emulator — not the real family
+      # PIN, and grants no access to anything outside this CI run.
+      FAMILY_PIN_HASH: "$2a$12$OTDpSJhfUntVZb9hh6TMX.9N8h1V.vFKTO0TEzE5j7CQIrFzn8cBG"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: "temurin"
+          java-version: "21"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+
+      - name: E2E tests
+        run: npm run test:e2e
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 7
+
+  secret-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

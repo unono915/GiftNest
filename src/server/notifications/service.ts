@@ -1,5 +1,6 @@
 import "server-only";
-import { getMessaging } from "firebase-admin/messaging";
+import { getMessaging, type SendResponse } from "firebase-admin/messaging";
+import { FieldValue } from "firebase-admin/firestore";
 import { getAdminApp, getAdminDb } from "@/lib/firebase/admin";
 import { devicesPath, gifticonsPath, membersPath, notificationLogsPath } from "@/lib/firebase/paths";
 import { todayKst, nowIso } from "@/lib/dates/kst";
@@ -35,10 +36,32 @@ async function writeLogs(
   await batch.commit();
 }
 
+// PRD 예외 상황 #15 "FCM 토큰이 만료됨" — a token FCM reports as
+// permanently dead is pruned from the device immediately, instead of
+// letting every future cron run keep retrying (and logging "failed"
+// against) a token that will never work again.
+const DEAD_TOKEN_CODES = new Set([
+  "messaging/registration-token-not-registered",
+  "messaging/invalid-registration-token",
+  "messaging/invalid-argument",
+]);
+
+function isDeadToken(response: SendResponse): boolean {
+  return !response.success && Boolean(response.error && DEAD_TOKEN_CODES.has(response.error.code));
+}
+
+async function pruneDeadTokens(deviceId: string, deadTokens: string[]): Promise<void> {
+  if (deadTokens.length === 0) return;
+  await getAdminDb()
+    .doc(`${devicesPath()}/${deviceId}`)
+    .set({ fcmTokens: FieldValue.arrayRemove(...deadTokens) }, { merge: true });
+}
+
 export type DailyNotificationSummary = {
   devicesNotified: number;
   notificationsSent: number;
   notificationsFailed: number;
+  deadTokensPruned: number;
 };
 
 /**
@@ -68,25 +91,31 @@ export async function sendDailyNotifications(): Promise<DailyNotificationSummary
   const messaging = getMessaging(getAdminApp());
   let notificationsSent = 0;
   let notificationsFailed = 0;
+  let deadTokensPruned = 0;
   const devicesNotifiedSet = new Set<string>();
 
   for (const device of devices) {
     const logEntries: Parameters<typeof writeLogs>[0] = [];
+    const deadTokens = new Set<string>();
+
+    async function send(message: { title: string; body: string }, gifticonId: string) {
+      const result = await messaging
+        .sendEachForMulticast({ tokens: device.fcmTokens, notification: message, data: { gifticonId } })
+        .catch(() => null);
+
+      if (result) {
+        result.responses.forEach((response, i) => {
+          if (isDeadToken(response)) deadTokens.add(device.fcmTokens[i]);
+        });
+      }
+      return result && result.successCount > 0 ? "sent" : "failed";
+    }
 
     for (const group of expiryGroups) {
       const unsent = group.gifticons.filter((g) => !alreadySent.has(logKey(device.id, group.type, g.id)));
       if (unsent.length === 0) continue;
 
-      const message = composeExpiryDigestMessage({ type: group.type, gifticons: unsent });
-      const result = await messaging
-        .sendEachForMulticast({
-          tokens: device.fcmTokens,
-          notification: message,
-          data: { gifticonId: unsent[0].id },
-        })
-        .catch(() => null);
-
-      const status = result && result.successCount > 0 ? "sent" : "failed";
+      const status = await send(composeExpiryDigestMessage({ type: group.type, gifticons: unsent }), unsent[0].id);
       for (const g of unsent) {
         logEntries.push({ gifticonId: g.id, deviceId: device.id, type: group.type, targetDate: today, status });
       }
@@ -99,15 +128,7 @@ export async function sendDailyNotifications(): Promise<DailyNotificationSummary
 
       const plannedMember = members.find((m) => m.id === reminder.gifticon.plannedMemberId);
       const message = composePlanReminderMessage(reminder, plannedMember?.name ?? null);
-      const result = await messaging
-        .sendEachForMulticast({
-          tokens: device.fcmTokens,
-          notification: message,
-          data: { gifticonId: reminder.gifticon.id },
-        })
-        .catch(() => null);
-
-      const status = result && result.successCount > 0 ? "sent" : "failed";
+      const status = await send(message, reminder.gifticon.id);
       logEntries.push({
         gifticonId: reminder.gifticon.id,
         deviceId: device.id,
@@ -123,11 +144,16 @@ export async function sendDailyNotifications(): Promise<DailyNotificationSummary
       devicesNotifiedSet.add(device.id);
       await writeLogs(logEntries);
     }
+    if (deadTokens.size > 0) {
+      await pruneDeadTokens(device.id, Array.from(deadTokens));
+      deadTokensPruned += deadTokens.size;
+    }
   }
 
   return {
     devicesNotified: devicesNotifiedSet.size,
     notificationsSent,
     notificationsFailed,
+    deadTokensPruned,
   };
 }

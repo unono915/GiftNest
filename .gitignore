@@ -63,3 +63,8 @@ pnpm-debug.log*
 
 # Gitleaks report output
 gitleaks-report.json
+
+# Playwright
+/test-results/
+/playwright-report/
+/playwright/.cache/
