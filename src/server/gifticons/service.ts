@@ -8,7 +8,17 @@ import { recordAuditLog } from "@/server/audit/service";
 import { ApiError } from "@/server/http";
 import type { Actor } from "@/server/auth/actor";
 import type { SaveGifticonInput, UpdateGifticonInput } from "@/lib/validation/gifticon";
+import type { PlanGifticonInput, UseGifticonInput } from "@/lib/validation/gifticonActions";
 import type { Gifticon } from "@/types/domain";
+
+async function getActiveGifticonOrThrow(gifticonId: string) {
+  const ref = getAdminDb().doc(`${gifticonsPath()}/${gifticonId}`);
+  const snap = await ref.get();
+  if (!snap.exists) throw new ApiError(404, "기프티콘을 찾을 수 없습니다.");
+  const current = snap.data() as Gifticon;
+  if (current.deletedAt) throw new ApiError(404, "삭제된 기프티콘입니다.");
+  return { ref, current };
+}
 
 async function findDuplicateByHash(imageHash: string | null): Promise<boolean> {
   if (!imageHash) return false;
@@ -184,4 +194,174 @@ export async function updateGifticon(
 
   const updatedSnap = await ref.get();
   return updatedSnap.data() as Gifticon;
+}
+
+function buildPlannedAt(plannedDate: string, plannedTime: string | null | undefined): string {
+  return `${plannedDate}T${plannedTime ?? "00:00"}:00+09:00`;
+}
+
+export async function planGifticon(actor: Actor, gifticonId: string, input: PlanGifticonInput): Promise<Gifticon> {
+  const { ref, current } = await getActiveGifticonOrThrow(gifticonId);
+
+  const before = {
+    plannedMemberId: current.plannedMemberId,
+    plannedAt: current.plannedAt,
+    plannedNote: current.plannedNote,
+  };
+  const plannedAt = buildPlannedAt(input.plannedDate, input.plannedTime);
+  const status = computeGifticonStatus({
+    usedAt: current.usedAt,
+    expirationDate: current.expirationDate,
+    needsReview: current.needsReview,
+    plannedMemberId: input.memberId,
+    archivedAt: current.archivedAt,
+  });
+
+  await ref.set(
+    {
+      plannedMemberId: input.memberId,
+      plannedAt,
+      plannedNote: input.plannedNote ?? null,
+      status,
+      updatedAt: nowIso(),
+    },
+    { merge: true }
+  );
+
+  await recordAuditLog({
+    gifticonId,
+    memberId: actor.memberId,
+    deviceId: actor.deviceId,
+    action: current.plannedMemberId ? "plan_changed" : "plan_set",
+    before,
+    after: { plannedMemberId: input.memberId, plannedAt, plannedNote: input.plannedNote ?? null },
+  });
+
+  const snap = await ref.get();
+  return snap.data() as Gifticon;
+}
+
+export async function clearGifticonPlan(actor: Actor, gifticonId: string): Promise<Gifticon> {
+  const { ref, current } = await getActiveGifticonOrThrow(gifticonId);
+
+  const status = computeGifticonStatus({
+    usedAt: current.usedAt,
+    expirationDate: current.expirationDate,
+    needsReview: current.needsReview,
+    plannedMemberId: null,
+    archivedAt: current.archivedAt,
+  });
+
+  await ref.set(
+    { plannedMemberId: null, plannedAt: null, plannedNote: null, status, updatedAt: nowIso() },
+    { merge: true }
+  );
+
+  await recordAuditLog({
+    gifticonId,
+    memberId: actor.memberId,
+    deviceId: actor.deviceId,
+    action: "plan_cleared",
+    before: {
+      plannedMemberId: current.plannedMemberId,
+      plannedAt: current.plannedAt,
+      plannedNote: current.plannedNote,
+    },
+    after: { plannedMemberId: null, plannedAt: null, plannedNote: null },
+  });
+
+  const snap = await ref.get();
+  return snap.data() as Gifticon;
+}
+
+/**
+ * PRD 14 "동시 수정": a real transaction guards this specifically because
+ * two family members marking the same gifticon used at once is the one
+ * conflict that actually causes user-visible harm (double-counting a
+ * single-use coupon) — everywhere else in this file, last-write-wins is an
+ * acceptable tradeoff for a small family app.
+ */
+export async function markGifticonUsed(actor: Actor, gifticonId: string, input: UseGifticonInput): Promise<Gifticon> {
+  const ref = getAdminDb().doc(`${gifticonsPath()}/${gifticonId}`);
+  const usedAt = input.usedAt ?? nowIso();
+
+  const before = await getAdminDb().runTransaction(async (tx) => {
+    const snap = await tx.get(ref);
+    if (!snap.exists) throw new ApiError(404, "기프티콘을 찾을 수 없습니다.");
+    const current = snap.data() as Gifticon;
+    if (current.deletedAt) throw new ApiError(404, "삭제된 기프티콘입니다.");
+    if (current.usedAt) throw new ApiError(409, "이미 사용 완료 처리된 기프티콘입니다.");
+
+    tx.set(
+      ref,
+      {
+        usedMemberId: input.memberId,
+        usedAt,
+        usedNote: input.usedNote ?? null,
+        status: "used",
+        updatedAt: nowIso(),
+      },
+      { merge: true }
+    );
+    return { status: current.status };
+  });
+
+  await recordAuditLog({
+    gifticonId,
+    memberId: actor.memberId,
+    deviceId: actor.deviceId,
+    action: "use",
+    before,
+    after: { usedMemberId: input.memberId, usedAt, status: "used" },
+  });
+
+  const snap = await ref.get();
+  return snap.data() as Gifticon;
+}
+
+export async function restoreGifticonUse(actor: Actor, gifticonId: string): Promise<Gifticon> {
+  const { ref, current } = await getActiveGifticonOrThrow(gifticonId);
+  if (!current.usedAt) throw new ApiError(409, "사용 완료 상태가 아닙니다.");
+
+  const status = computeGifticonStatus({
+    usedAt: null,
+    expirationDate: current.expirationDate,
+    needsReview: current.needsReview,
+    plannedMemberId: current.plannedMemberId,
+    archivedAt: current.archivedAt,
+  });
+
+  await ref.set(
+    { usedMemberId: null, usedAt: null, usedNote: null, status, updatedAt: nowIso() },
+    { merge: true }
+  );
+
+  await recordAuditLog({
+    gifticonId,
+    memberId: actor.memberId,
+    deviceId: actor.deviceId,
+    action: "use_cancelled",
+    before: { usedMemberId: current.usedMemberId, usedAt: current.usedAt, status: current.status },
+    after: { usedMemberId: null, usedAt: null, status },
+  });
+
+  const snap = await ref.get();
+  return snap.data() as Gifticon;
+}
+
+export async function deleteGifticon(actor: Actor, gifticonId: string): Promise<void> {
+  const { ref, current } = await getActiveGifticonOrThrow(gifticonId);
+  const deletedAt = nowIso();
+
+  await ref.set({ deletedAt, updatedAt: deletedAt }, { merge: true });
+
+  await recordAuditLog({
+    gifticonId,
+    memberId: actor.memberId,
+    deviceId: actor.deviceId,
+    action: "delete",
+    // PRD 5.13: audit entries for delete keep only minimal metadata, no image paths.
+    before: { brand: current.brand, productName: current.productName },
+    after: { deletedAt },
+  });
 }

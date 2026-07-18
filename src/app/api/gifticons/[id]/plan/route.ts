@@ -2,17 +2,17 @@ import { NextResponse, type NextRequest } from "next/server";
 import { requireAuth } from "@/server/auth/verifyRequest";
 import { getActor } from "@/server/auth/actor";
 import { handleApiError } from "@/server/http";
-import { updateGifticonSchema } from "@/lib/validation/gifticon";
-import { deleteGifticon, updateGifticon } from "@/server/gifticons/service";
+import { planGifticonSchema } from "@/lib/validation/gifticonActions";
+import { clearGifticonPlan, planGifticon } from "@/server/gifticons/service";
 
-export async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const decoded = await requireAuth(request);
     const actor = await getActor(decoded.uid);
     const { id } = await params;
-    const patch = updateGifticonSchema.parse(await request.json());
+    const input = planGifticonSchema.parse(await request.json());
 
-    const gifticon = await updateGifticon(actor, id, patch);
+    const gifticon = await planGifticon(actor, id, input);
     return NextResponse.json({ success: true, gifticon });
   } catch (error) {
     return handleApiError(error);
@@ -25,8 +25,8 @@ export async function DELETE(request: NextRequest, { params }: { params: Promise
     const actor = await getActor(decoded.uid);
     const { id } = await params;
 
-    await deleteGifticon(actor, id);
-    return NextResponse.json({ success: true });
+    const gifticon = await clearGifticonPlan(actor, id);
+    return NextResponse.json({ success: true, gifticon });
   } catch (error) {
     return handleApiError(error);
   }
