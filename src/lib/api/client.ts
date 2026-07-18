@@ -21,7 +21,10 @@ export async function authedFetch(path: string, init: RequestInit = {}): Promise
   const idToken = await user.getIdToken();
   const headers = new Headers(init.headers);
   headers.set("Authorization", `Bearer ${idToken}`);
-  if (init.body && !headers.has("Content-Type")) {
+  // FormData bodies must NOT get an explicit Content-Type — the browser
+  // sets its own `multipart/form-data; boundary=...`, and overriding it
+  // (even with the "right" mime type) breaks the server's form parser.
+  if (init.body && !(init.body instanceof FormData) && !headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json");
   }
 
